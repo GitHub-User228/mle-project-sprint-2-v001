@@ -1,0 +1,17 @@
+DB_DESTINATION_HOST=<database_destination_host>
+DB_DESTINATION_PORT=<database_destination_port>
+DB_DESTINATION_NAME=<database_destination_name>
+DB_DESTINATION_USER=<database_destination_username>
+DB_DESTINATION_PASSWORD=<database_destination_password>
+
+S3_BUCKET_NAME=<s3_bucket_name>
+AWS_ACCESS_KEY_ID=<aws_access_key_id>
+AWS_SECRET_ACCESS_KEY=<aws_secret_access_key>
+
+MLFLOW_S3_ENDPOINT_URL=<mlflow_s3_endpoint_url>
+
+TRACKING_SERVER_HOST=127.0.0.1
+TRACKING_SERVER_PORT=5000
+
+CONFIG_DIR=../config
+LOG_DIR=../logs

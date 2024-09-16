@@ -1,0 +1,7 @@
+experiment_name: 'flat_price_prediction'
+raw_table_name: 'cleaned_flats'
+target_col: 'log1p_target'
+data_split_config:
+  val_size: 0.1
+  test_size: 0.1
+  random_state: 42
