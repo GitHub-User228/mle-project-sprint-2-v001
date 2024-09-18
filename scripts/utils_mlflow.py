@@ -92,6 +92,9 @@ def log_model_info(
         metadata (dict, optional):
             A dictionary of metadata to be associated with the model.
             Defaults to {"model_type": "monthly"}.
+        await_registration_for (int, optional):
+            The number of seconds to wait for the model to be
+            registered. Defaults to 60.
     """
 
     if metrics:

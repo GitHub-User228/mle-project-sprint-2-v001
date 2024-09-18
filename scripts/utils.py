@@ -6,11 +6,54 @@ import psycopg
 import itertools
 import numpy as np
 import pandas as pd
+from scipy import stats
 from tqdm.auto import tqdm
-from scipy.stats import ks_2samp, anderson_ksamp
 
 from scripts import logger
 from scripts.env import env_vars
+
+
+def save_yaml(data: dict, path: Path) -> None:
+    """
+    Saves a dictionary to a YAML file.
+
+    Args:
+        data (dict):
+            The dictionary to be saved as YAML.
+        path (Path):
+            The path to the YAML file where the data will be saved.
+
+    Raises:
+        ValueError:
+            If the file is not a YAML file.
+        IOError:
+            If an I/O error occurs during the saving process.
+        yaml.YAMLError:
+            If there is an error encoding the dictionary to YAML.
+    """
+    if path.suffix not in [".yaml", ".yml"]:
+        msg = f"The file {path} is not a YAML file"
+        logger.error(msg)
+        raise ValueError(msg)
+    try:
+        with open(path, "w") as file:
+            yaml.safe_dump(data, file)
+        logger.info(f"Dictionary has been saved to YAML file {path}")
+    except IOError as e:
+        msg = f"An I/O error occurred while saving the dictionary to {path}"
+        logger.error(msg)
+        raise IOError(msg) from e
+    except yaml.YAMLError as e:
+        msg = f"Error encoding dictionary to YAML file {path}"
+        logger.error(msg)
+        raise yaml.YAMLError(msg) from e
+    except Exception as e:
+        msg = (
+            f"An unexpected error occurred while saving the dictionary"
+            f"to {path}"
+        )
+        logger.error(msg)
+        raise Exception(msg) from e
 
 
 def read_yaml(path: Path) -> dict:
@@ -193,21 +236,31 @@ def get_bins(x: int) -> int:
     return n_bins
 
 
-def compare_disributions(
-    data: dict[str, np.ndarray | pd.Series],
+def compare_distributions(
+    data: pd.DataFrame,
+    features: list[str],
+    hue: str,
     significance_level: float = 0.05,
+    are_categorical: bool = False,
 ):
     """
-    Compares the distributions of multiple datasets using the
-    Kolmogorov-Smirnov (KS) test and the Anderson-Darling test.
+    Compares the distributions on the dataset using
+    multiple statistical tests.
 
     Args:
-        data (dict[str, np.ndarray | pd.Series]):
-            A dictionary where the keys are the names of the datasets
-            and the values are the corresponding data.
+        data (pd.DataFrame):
+            A DataFrame with the data.
+        features (list[str]):
+            A list of feature names to compare the distributions for.
+        hue (str):
+            The name of the column in the DataFrame that represents
+            the "hue" or grouping variable.
         significance_level (float, optional):
             The significance level to use for the hypothesis tests.
             Defaults to 0.05.
+        are_categorical (bool, optional):
+            Whether the features are categorical or not.
+            Defaults to False.
 
     Returns:
         pd.DataFrame:
@@ -216,36 +269,145 @@ def compare_disributions(
             considered similar or not.
     """
 
-    pvalues = pd.DataFrame(
-        list(itertools.combinations(list(data.keys()), 2)),
-        columns=["data1", "data2"],
+    def get_pvalues_num(
+        data1: np.ndarray | pd.Series, data2: np.ndarray | pd.Series
+    ) -> tuple[float, float, float]:
+        """
+        Calculates the p-values for the Kolmogorov-Smirnov (KS) test,
+        the Anderson-Darling test, Mann-Whitney U test and Wilcoxon
+        rank-sum test.
+
+        Args:
+            data1 (np.ndarray | pd.Series):
+                The first dataset.
+            data2 (np.ndarray | pd.Series):
+                The second dataset.
+
+        Returns:
+            dict[str, float]:
+                A dictionary containing the p-values for tests
+        """
+        res = {}
+        res["ks_2samp"] = stats.ks_2samp(data1, data2)[1]
+        res["anderson_ksamp"] = stats.anderson_ksamp([data1, data2]).pvalue
+        res["mannwhitneyu"] = stats.mannwhitneyu(data1, data2)[1]
+        res["ranksums"] = stats.ranksums(data1, data2)[1]
+        return res
+
+    def get_pvalues_cat(
+        data: pd.DataFrame, feature: str, hue: str
+    ) -> dict[str, float]:
+        """
+        Calculates the p-values for the Fisher's exact test and the
+        Barnard's exact test for a 2x2 contingency table with small
+        sample size, or the p-values for the Chi-square test and the
+        Chi-square test with likelihood ratio for larger samples.
+
+        Args:
+            data (pd.DataFrame):
+                The DataFrame containing the data.
+            feature (str):
+                The name of the feature column.
+            hue (str):
+                The name of the hue column.
+
+        Returns:
+            dict[str, float]:
+                 A dictionary containing the p-values for the tests.
+        """
+
+        observed = pd.crosstab(data[feature], data[hue]).values
+        res = {}
+        if len(data) < 30:
+            if observed.shape == (2, 2):
+                res["fisher_exact"] = stats.fisher_exact(observed)[1]
+                res["barnard_exact"] = stats.barnard_exact(observed)[1]
+        else:
+            res["chi2_contingency"] = stats.chi2_contingency(observed)[1]
+            res["chi2_contingency_likelihood"] = stats.chi2_contingency(
+                observed, lambda_="log-likelihood"
+            )[1]
+        return res
+
+    pv = pd.DataFrame(
+        [
+            (value,) + combination
+            for value in features
+            for combination in itertools.combinations(data[hue].unique(), 2)
+        ],
+        columns=["feature", "hue1", "hue2"],
     )
-    pvalues["ks_2samp.pvalue"] = None
-    pvalues["anderson_ksamp.pvalue"] = None
-    pvalues["significance_level"] = significance_level
 
-    for i in tqdm(pvalues.index):
-        subset1 = pvalues.loc[i, "data1"]
-        subset2 = pvalues.loc[i, "data2"]
-        _, p_value = ks_2samp(
-            data[subset1],
-            data[subset2],
-        )
-        pvalues.loc[i, "ks_2samp.pvalue"] = p_value
+    pv["significance_level"] = significance_level
 
-        res = anderson_ksamp(
-            [
-                data[subset1],
-                data[subset2],
-            ]
-        )
-        pvalues.loc[i, "anderson_ksamp.pvalue"] = res.pvalue
+    for feature in features:
 
-    pvalues["ks_2samp.are_similar"] = (
-        pvalues["ks_2samp.pvalue"] >= significance_level
+        for i in pv.loc[pv["feature"] == feature].index:
+            hue1 = pv.loc[i, "hue1"]
+            hue2 = pv.loc[i, "hue2"]
+            if are_categorical:
+                vals = get_pvalues_cat(
+                    data=data.loc[
+                        data[hue].isin([hue1, hue2]), [feature, hue]
+                    ],
+                    feature=feature,
+                    hue=hue,
+                )
+            else:
+                vals = get_pvalues_num(
+                    data.query(f"subset == '{hue1}'")[feature],
+                    data.query(f"subset == '{hue2}'")[feature],
+                )
+            for key, value in vals.items():
+                pv.loc[i, f"{key}.pv"] = value
+
+    for col in pv.columns:
+        if col.endswith(".pv"):
+            pv[f"{col.replace('.pv', '')}.similar"] = (
+                pv[col] >= significance_level
+            )
+    return pv
+
+
+def reduce_size(df: pd.DataFrame):
+    """
+    Reduces the size of the DataFrame by converting integer
+    and float columns to smaller data types.
+
+    This function iterates through each column in the DataFrame and
+    checks the minimum and maximum values. It then converts the column
+    to a smaller data type if possible, such as `uint8`, `uint16`,
+    `int8`, or `int16`, to reduce the memory footprint of the DataFrame.
+
+    Args:
+        df (pd.DataFrame):
+            The DataFrame to be reduced in size.
+    """
+    print(
+        "Dataframe memory usage before optimisation:",
+        df.memory_usage().sum() / (1024**2),
+        "MB",
     )
-    pvalues["anderson_ksamp.are_similar"] = (
-        pvalues["anderson_ksamp.pvalue"] >= significance_level
+    for col in tqdm(df.columns):
+        if "int" in df[col].dtype.name:
+            if df[col].min() >= 0:
+                if df[col].max() <= 255:
+                    df[col] = df[col].astype("uint8")
+                elif df[col].max() <= 65535:
+                    df[col] = df[col].astype("uint16")
+                else:
+                    df[col] = df[col].astype("uint32")
+            else:
+                if max(abs(df[col].min()), df[col].max()) <= 127:
+                    df[col] = df[col].astype("int8")
+                elif max(abs(df[col].min()), df[col].max()) <= 32767:
+                    df[col] = df[col].astype("int16")
+                else:
+                    df[col] = df[col].astype("int32")
+        elif "float" in df[col].dtype.name:
+            df[col] = df[col].astype("float32")
+    print(
+        "Dataframe memory usage after optimisation:",
+        df.memory_usage().sum() / (1024**2),
+        "MB",
     )
-
-    return pvalues

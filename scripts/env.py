@@ -1,4 +1,4 @@
-from pathlib import Path, PosixPath
+from pathlib import Path
 
 from pydantic import BaseSettings, validator
 
@@ -23,20 +23,22 @@ class EnviromentVariables(BaseSettings):
     tracking_server_host: str
     tracking_server_port: int
 
-    log_dir: PosixPath = Path("../logs")
-    config_dir: PosixPath = Path("../config")
+    log_dir: Path
+    config_dir: Path
+    artifacts_dir: Path
+    eda_artifacts_dir: Path
 
     class Config:
         env_file = ".env"
 
     @validator("*")
-    def check_variable(cls, v: str | PosixPath, field: str) -> str | PosixPath:
+    def check_variable(cls, v: str | Path, field: str) -> str | Path:
         """
         Validates and checks the environment variable specified by the
         `field` parameter. Returns the validated variable.
 
         Args:
-            v (str | PosixPath):
+            v (str | Path):
                 The environment variable value to be validated.
             field (str):
                 The name of the environment variable.
@@ -46,14 +48,14 @@ class EnviromentVariables(BaseSettings):
                 If the environment variable is not set.
 
         Returns:
-            str | PosixPath:
+            str | Path:
                 The validated environment variable value.
         """
         if v is None:
             raise ValueError(
                 f"Environment variable '{field.name}' is not set."
             )
-        if isinstance(v, PosixPath):
+        if isinstance(v, Path):
             if not v.exists():
                 v.mkdir(parents=True, exist_ok=True)
         return v
