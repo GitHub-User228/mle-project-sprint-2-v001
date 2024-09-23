@@ -16,4 +16,6 @@ TRACKING_SERVER_PORT=5000
 CONFIG_DIR=../config
 LOG_DIR=../logs
 ARTIFACTS_DIR=../artifacts
-EDA_ARTIFACTS_DIR=$ARTIFACTS_DIR/eda
+BASELINE_ARTIFACTS_DIR=../artifacts/baseline
+EDA_ARTIFACTS_DIR=../artifacts/eda
+FE_ARTIFACTS_DIR=../artifacts/fe

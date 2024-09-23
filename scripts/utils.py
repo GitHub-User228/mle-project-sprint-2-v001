@@ -1,11 +1,14 @@
+import os
 from pathlib import Path
 
 import yaml
 import joblib
 import psycopg
+import requests
 import itertools
 import numpy as np
 import pandas as pd
+from typing import *
 from scipy import stats
 from tqdm.auto import tqdm
 
@@ -33,7 +36,7 @@ def save_yaml(data: dict, path: Path) -> None:
     """
     if path.suffix not in [".yaml", ".yml"]:
         msg = f"The file {path} is not a YAML file"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise ValueError(msg)
     try:
         with open(path, "w") as file:
@@ -41,22 +44,22 @@ def save_yaml(data: dict, path: Path) -> None:
         logger.info(f"Dictionary has been saved to YAML file {path}")
     except IOError as e:
         msg = f"An I/O error occurred while saving the dictionary to {path}"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise IOError(msg) from e
     except yaml.YAMLError as e:
         msg = f"Error encoding dictionary to YAML file {path}"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise yaml.YAMLError(msg) from e
     except Exception as e:
         msg = (
             f"An unexpected error occurred while saving the dictionary"
             f"to {path}"
         )
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise Exception(msg) from e
 
 
-def read_yaml(path: Path) -> dict:
+def read_yaml(path: Path) -> Dict:
     """
     Reads a yaml file, and returns a dict.
 
@@ -78,7 +81,7 @@ def read_yaml(path: Path) -> dict:
     """
     if path.suffix not in [".yaml", ".yml"]:
         msg = f"The file {path} is not a YAML file"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise ValueError(msg)
     try:
         with open(path, "r") as file:
@@ -87,15 +90,15 @@ def read_yaml(path: Path) -> dict:
         return content
     except FileNotFoundError as e:
         msg = f"File {path} not found"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise FileNotFoundError(msg) from e
     except yaml.YAMLError as e:
         msg = f"Error parsing YAML file {path}"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise yaml.YAMLError(msg) from e
     except Exception as e:
         msg = f"An unexpected error occurred while reading YAML file {path}"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise Exception(msg) from e
 
 
@@ -124,7 +127,7 @@ def read_pkl(path: Path) -> object:
 
     if path.suffix != ".pkl":
         msg = f"The file {path} is not a pkl file"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise ValueError(msg)
 
     try:
@@ -134,15 +137,15 @@ def read_pkl(path: Path) -> object:
         return model
     except FileNotFoundError as e:
         msg = f"File '{path}' does not exist"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise FileNotFoundError(msg) from e
     except IOError as e:
         msg = f"An I/O error occurred while loading a model from {path}"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise IOError(msg) from e
     except Exception as e:
         msg = f"An unexpected error occurred while loading a model from {path}"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise Exception(msg) from e
 
 
@@ -152,7 +155,7 @@ def read_table_from_db(
         "sslmode": "require",
         "target_session_attrs": "read-write",
     },
-    date_columns: list[str] | None = None,
+    date_columns: List[str] | None = None,
 ) -> pd.DataFrame:
     """
     Reads a table from a PostgreSQL database and returns it as a pandas
@@ -165,7 +168,7 @@ def read_table_from_db(
             A dictionary of connection parameters for the database.
             Defaults to `{"sslmode": "require",
             "target_session_attrs": "read-write"}`.
-        date_columns (list[str] | None, optional):
+        date_columns (List[str] | None, optional):
             A list of column names that should be converted to datetime
             objects. Defaults to `None`.
 
@@ -199,7 +202,7 @@ def read_table_from_db(
                 columns = [col[0] for col in cur.description]
     except psycopg.Error as e:
         msg = f"Error reading table {table_name} from database"
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise psycopg.Error(msg) from e
 
     df = pd.DataFrame(data, columns=columns)
@@ -231,18 +234,18 @@ def get_bins(x: int) -> int:
             "An invalid input value passed. Expected a positive "
             + "integer, but got {x}"
         )
-        logger.error(msg)
+        logger.error(f"{msg}: {e}")
         raise ValueError(msg)
     return n_bins
 
 
 def compare_distributions(
     data: pd.DataFrame,
-    features: list[str],
+    features: List[str],
     hue: str,
     significance_level: float = 0.05,
     are_categorical: bool = False,
-):
+) -> pd.DataFrame:
     """
     Compares the distributions on the dataset using
     multiple statistical tests.
@@ -250,7 +253,7 @@ def compare_distributions(
     Args:
         data (pd.DataFrame):
             A DataFrame with the data.
-        features (list[str]):
+        features (List[str]):
             A list of feature names to compare the distributions for.
         hue (str):
             The name of the column in the DataFrame that represents
@@ -271,7 +274,7 @@ def compare_distributions(
 
     def get_pvalues_num(
         data1: np.ndarray | pd.Series, data2: np.ndarray | pd.Series
-    ) -> tuple[float, float, float]:
+    ) -> Dict[str, float]:
         """
         Calculates the p-values for the Kolmogorov-Smirnov (KS) test,
         the Anderson-Darling test, Mann-Whitney U test and Wilcoxon
@@ -284,7 +287,7 @@ def compare_distributions(
                 The second dataset.
 
         Returns:
-            dict[str, float]:
+            Dict[str, float]:
                 A dictionary containing the p-values for tests
         """
         res = {}
@@ -296,7 +299,7 @@ def compare_distributions(
 
     def get_pvalues_cat(
         data: pd.DataFrame, feature: str, hue: str
-    ) -> dict[str, float]:
+    ) -> Dict[str, float]:
         """
         Calculates the p-values for the Fisher's exact test and the
         Barnard's exact test for a 2x2 contingency table with small
@@ -312,7 +315,7 @@ def compare_distributions(
                 The name of the hue column.
 
         Returns:
-            dict[str, float]:
+            Dict[str, float]:
                  A dictionary containing the p-values for the tests.
         """
 
@@ -369,7 +372,7 @@ def compare_distributions(
     return pv
 
 
-def reduce_size(df: pd.DataFrame):
+def reduce_size(df: pd.DataFrame) -> None:
     """
     Reduces the size of the DataFrame by converting integer
     and float columns to smaller data types.
@@ -411,3 +414,56 @@ def reduce_size(df: pd.DataFrame):
         df.memory_usage().sum() / (1024**2),
         "MB",
     )
+
+
+def retrieve_moscow_metro_stations_data() -> None:
+    """
+    Retrieves data for Moscow metro stations from the HH.ru API.
+    """
+    try:
+        with requests.Session() as s:
+            response = s.get(
+                url="https://api.hh.ru/metro/1",
+            )
+            response.raise_for_status()
+    except Exception as e:
+        msg = f"Error retrieving Moscow metro stations data"
+        logger.error(f"{msg}: {e}")
+        raise Exception(msg) from e
+    try:
+        data = pd.DataFrame(
+            [
+                (v["id"], v["name"], k["name"], k["lat"], k["lng"], k["order"])
+                for v in response.json()["lines"]
+                for k in v["stations"]
+            ],
+            columns=[
+                "line_id",
+                "line_name",
+                "station_name",
+                "lat",
+                "long",
+                "order",
+            ],
+        )
+        data = data.query("(long > 30) and (long < 38.5)").reset_index(
+            drop=True
+        )
+        data["lat"] = data["lat"].astype(np.float32)
+        data["long"] = data["long"].astype(np.float32)
+    except Exception as e:
+        msg = f"Error processing Moscow metro stations data"
+        logger.error(f"{msg}: {e}")
+        raise Exception(msg) from e
+    try:
+        data.to_csv(
+            os.path.join(
+                env_vars.fe_artifacts_dir, "moscow_metro_stations.csv"
+            ),
+            index=False,
+        )
+    except Exception as e:
+        msg = f"Error saving Moscow metro stations data"
+        logger.error(f"{msg}: {e}")
+        raise Exception(msg) from e
+    logger.info(f"Moscow metro stations data has been retrieved and saved")

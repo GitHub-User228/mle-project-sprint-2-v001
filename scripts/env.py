@@ -26,7 +26,9 @@ class EnviromentVariables(BaseSettings):
     log_dir: Path
     config_dir: Path
     artifacts_dir: Path
+    baseline_artifacts_dir: Path
     eda_artifacts_dir: Path
+    fe_artifacts_dir: Path
 
     class Config:
         env_file = ".env"

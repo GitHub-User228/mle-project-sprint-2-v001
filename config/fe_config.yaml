@@ -1,0 +1,209 @@
+transformers:
+    poly:
+      class_name: PolynomialFeatures
+      prefix: 'poly.'
+      params:
+        degree: [2, 2]
+        include_bias: false
+      columns:
+        - 'total_area'
+        - 'living_area'
+        - 'kitchen_area'
+        - 'ceiling_height'
+    spline:
+      class_name: SplineTransformer
+      prefix: 'spline.'
+      params:
+        n_knots: 3
+        degree: 3
+      columns:
+        - 'total_area'
+        - 'living_area'
+        - 'kitchen_area'
+        - 'ceiling_height' 
+    kbins:
+      class_name: KBinsDiscretizer
+      prefix: 'kbins.'
+      params:
+        n_bins: 5
+        encode: 'ordinal'
+        strategy: 'uniform'
+      columns:
+        - 'total_area'
+        - 'living_area'
+        - 'kitchen_area'
+        - 'ceiling_height'
+        - 'build_year'
+    distance:
+      class_name: DistanceTransformer
+      prefix: 'dt.'
+      params:
+        point: [55.751244, 37.618423]
+        in_features_names: ['latitude', 'longitude']
+        out_feature_name: 'dist_to_center'
+        distance_metric_name: 'haversine_dist2'
+      columns: ['latitude', 'longitude']
+    closest_distance:
+      class_name: ClosestDistanceTransformer
+      prefix: 'cdt.'
+      params:
+        points_csv_path: '../artifacts/fe/moscow_metro_stations.csv'
+        points_features_names: ['lat', 'long']
+        in_features_names: ['latitude', 'longitude']
+        out_feature_name: 'dist_to_metro'
+        distance_metric_name: 'haversine_dist2'
+        points_prep_func_name: 'spherical_to_cartesian'
+      columns: ['latitude', 'longitude']
+    featuretools:
+      class_name: FeatureToolsTransformer
+      prefix: 'ft.'
+      params:
+        trans_primitives:
+          - 'divide_numeric'
+          - 'multiply_numeric'
+          - name: ScalarSubtractNumericFeature
+            params: 
+              value: 2024
+          - name: EqualScalar
+            params:
+              value: 0
+        drop_contains:
+          - '/ living_area'
+          - '/ kitchen_area'
+        primitive_options:
+          divide_numeric:
+            ignore_columns:
+              main: 
+              - 'build_year'
+          multiply_numeric:
+            include_columns:
+              main:
+                - 'total_area'
+                - 'ceiling_height'
+          scalar_subtract_numeric_feature:
+            include_columns:
+              main:
+                - 'build_year'
+          equal_scalar:
+            include_columns:
+              main:
+              - 'kitchen_area'
+              - 'living_area'
+        n_jobs: 1
+      columns:
+        - 'total_area'
+        - 'living_area'
+        - 'kitchen_area'
+        - 'ceiling_height'
+        - 'rooms'   
+        - 'build_year'
+    ordinal_encoder:
+      class_name: OrdinalEncoder
+      prefix: 'oe.'
+      params:
+      columns_selector_params:
+          dtype_include: 'bool'
+      columns: 
+    passthrough1:
+      class_name: 'PassthroughTransformer'
+      prefix: ''
+      params: 
+        passthrough_cols: 
+        drop_cols: 
+          - 'id'
+          - 'building_id'
+          - 'subset'
+          - 'build_year'
+          - 'is_apartment'
+          - 'has_elevator'
+          - 'is_duplicated'
+      columns: 
+
+    normalizer:
+      class_name: FeatureNormaliserTransformer
+      prefix: 'fnt.'
+      params: 
+        features_to_normalise: 
+          - 'total_area'
+        grouping_features:
+          - 'kbins.build_year'
+          - 'building_type_int'
+          - 'oe.has_elevator'
+        aggregation_method: 'mean'
+      columns: 
+        - 'total_area'
+        - 'kbins.build_year'
+        - 'building_type_int'
+        - 'oe.has_elevator'
+    catboost_encoder:
+      class_name: CatBoostEncoder
+      prefix: 'cbe.'
+      params: 
+        return_df: False
+        cols:
+          - 'building_type_int'
+          - 'kbins.total_area'
+          - 'kbins.living_area'
+          - 'kbins.kitchen_area'
+          - 'kbins.ceiling_height'
+          - 'kbins.build_year'
+      columns: 
+        - 'building_type_int'
+        - 'kbins.total_area'
+        - 'kbins.living_area'
+        - 'kbins.kitchen_area'
+        - 'kbins.ceiling_height'
+        - 'kbins.build_year'
+    autofeat:
+      class_name: AutoFeatTransformer
+      prefix: 'af.'
+      params:
+        transformations:
+          - '1/'
+          - 'log'
+          - 'cos'
+          - 'sin'
+        feateng_steps: 2
+        featsel_runs: 5
+        max_gb: 2
+        n_jobs: 1
+        verbose: True
+      columns:
+        - 'total_area'
+        - 'living_area'
+        - 'kitchen_area'
+        - 'ceiling_height'
+    passthrough2:
+      class_name: 'PassthroughTransformer'
+      prefix: ''
+      params: 
+        passthrough_cols: 
+        drop_cols: 
+        - 'building_type_int'
+        - 'kbins.total_area'
+        - 'kbins.living_area'
+        - 'kbins.kitchen_area'
+        - 'kbins.ceiling_height'
+        - 'kbins.build_year'
+      columns: 
+
+pipeline:
+    step1:
+      transformers:
+        - 'poly'
+        - 'spline'
+        - 'kbins'
+        - 'featuretools'
+        - 'distance'
+        - 'closest_distance'
+        - 'ordinal_encoder'
+        - 'passthrough1'
+    step2:
+      transformers:
+        - 'catboost_encoder'
+        - 'normalizer'
+        - 'autofeat'
+        - 'passthrough2'
+
+  
+

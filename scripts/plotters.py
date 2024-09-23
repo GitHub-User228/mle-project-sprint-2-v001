@@ -1,8 +1,8 @@
 import pandas as pd
 import seaborn as sns
-from typing import Literal
 from pathlib import Path
 import matplotlib.pyplot as plt
+from typing import Literal, List
 
 from scripts import logger
 from scripts.utils import get_bins
@@ -10,7 +10,7 @@ from scripts.utils import get_bins
 
 def custom_hist_multiplot(
     data: pd.DataFrame,
-    columns: list[str],
+    columns: List[str],
     hue: str | None = None,
     hue_order: list | None = None,
     title: str | None = None,
@@ -25,7 +25,7 @@ def custom_hist_multiplot(
     Parameters:
         data (pd.DataFrame):
             The input data.
-        columns (list[str]):
+        columns (List[str]):
             The columns to plot histograms for.
         hue (str | None, optional):
             The column to use for grouping the data. Defaults to None.
@@ -62,7 +62,8 @@ def custom_hist_multiplot(
                 stat="density",
                 bins=get_bins(len(data)),
             )
-            sns.move_legend(axs[i], "upper left", bbox_to_anchor=(1, 1))
+            if hue:
+                sns.move_legend(axs[i], "upper left", bbox_to_anchor=(1, 1))
     elif features_kind == "cat":
         if cat_orient == "h":
             nunique = sum([data[col].nunique() for col in columns])
@@ -109,7 +110,8 @@ def custom_hist_multiplot(
                 axs[it].set_xticks(sorted(data[col].unique()))
                 axs[it].grid(axis="x", linestyle="")
                 axs[it].set_xlim(data[col].min() - 1, data[col].max() + 1)
-            sns.move_legend(axs[it], "upper left", bbox_to_anchor=(1, 1))
+            if hue:
+                sns.move_legend(axs[it], "upper left", bbox_to_anchor=(1, 1))
 
     fig.tight_layout()
     plt.show()
@@ -122,7 +124,7 @@ def custom_joint_plot(
     data: pd.DataFrame,
     x: str,
     y: str,
-    hue: str = "subset",
+    hue: str | None = None,
     title: str | None = None,
     savepath: Path | None = None,
 ) -> None:
@@ -161,7 +163,7 @@ def custom_joint_plot(
 
 def custom_box_multiplot(
     data: pd.DataFrame,
-    columns: list[str],
+    columns: List[str],
     hue: str | None = None,
     title: str | None = None,
     savepath: Path | None = None,
@@ -173,7 +175,7 @@ def custom_box_multiplot(
     Args:
         data (pd.DataFrame):
             The input data.
-        columns (list[str]):
+        columns (List[str]):
             The column names to plot.
         hue (str | None, optional):
             The column to use for grouping the data. Defaults to None.
@@ -190,7 +192,8 @@ def custom_box_multiplot(
         fig.suptitle(title, fontsize=16)
     for i, col in enumerate(columns):
         sns.boxplot(data=data, x=col, orient="h", ax=axs[i], hue=hue)
-        sns.move_legend(axs[i], "upper left", bbox_to_anchor=(1, 1))
+        if hue:
+            sns.move_legend(axs[i], "upper left", bbox_to_anchor=(1, 1))
     fig.tight_layout()
     plt.show()
     if savepath:
@@ -201,7 +204,7 @@ def custom_box_multiplot(
 def custom_violin_multiplot(
     data: pd.DataFrame,
     x: str,
-    columns: list[str],
+    columns: List[str],
     hue: str | None = None,
     hue_order: list | None = None,
     k: float = 0.5,
@@ -216,7 +219,7 @@ def custom_violin_multiplot(
             The input data.
         x (str):
             The column to use for the x-axis.
-        columns (list[str]):
+        columns (List[str]):
             The column names to plot.
         hue (str | None, optional):
             The column to use for grouping the data. Defaults to None.
@@ -250,7 +253,8 @@ def custom_violin_multiplot(
         axs[it].set_xlabel("")
         axs[it].set_ylabel("")
         axs[it].set_title(y)
-        sns.move_legend(axs[it], "upper left", bbox_to_anchor=(1, 1))
+        if hue:
+            sns.move_legend(axs[it], "upper left", bbox_to_anchor=(1, 1))
     axs[it].set_xlabel(x)
     fig.tight_layout()
     plt.show()

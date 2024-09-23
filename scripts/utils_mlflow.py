@@ -1,6 +1,7 @@
 import mlflow
 import numpy as np
 import pandas as pd
+from typing import *
 from mlflow.models.signature import infer_signature
 
 from scripts import logger
@@ -54,14 +55,16 @@ def get_experiment_id(
 
 def log_model_info(
     model: object,
+    client: mlflow.tracking.client.MlflowClient,
     registry_model_name: str,
     model_loader: mlflow.utils.lazy_load.LazyLoader,
     input_example: np.ndarray | pd.DataFrame,
     prediction: np.ndarray,
-    pip_requirements: str | list[str] = "../requirements.txt",
-    metrics: dict | None = None,
-    params: dict | None = None,
-    metadata: dict | None = {"model_type": "monthly"},
+    pip_requirements: str | List[str] = "../requirements.txt",
+    metrics: Dict[str, Any] | None = None,
+    params: Dict[str, Any] | None = None,
+    metadata: Dict[str, Any] | None = None,
+    model_tags: Dict[str, Any] | None = None,
     await_registration_for: int | None = 60,
 ) -> None:
     """
@@ -81,7 +84,7 @@ def log_model_info(
         prediction (np.ndarray):
             A sample prediction from the model to be used for the
             model signature.
-        pip_requirements (str | list[str], optional):
+        pip_requirements (str | List[str], optional):
             The path to the pip requirements file or a list of pip
             requirements.
             Defaults to "../requirements.txt".
@@ -92,6 +95,8 @@ def log_model_info(
         metadata (dict, optional):
             A dictionary of metadata to be associated with the model.
             Defaults to {"model_type": "monthly"}.
+        tags (dict, optional):
+            A dictionary of tags to be associated with the model.
         await_registration_for (int, optional):
             The number of seconds to wait for the model to be
             registered. Defaults to 60.
@@ -123,6 +128,15 @@ def log_model_info(
             await_registration_for=await_registration_for,
             pip_requirements=pip_requirements,
         )
+        model_info = client.get_latest_versions(registry_model_name)[0]
+        if model_tags:
+            for key, value in model_tags.items():
+                client.set_model_version_tag(
+                    name=registry_model_name,
+                    version=model_info.version,
+                    key=key,
+                    value=value,
+                )
         logger.info(f"Model {registry_model_name} has been logged")
     except Exception as e:
         msg = f"Failed to log model {registry_model_name}"

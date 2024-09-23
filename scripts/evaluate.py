@@ -1,10 +1,11 @@
 import numpy as np
+from typing import Dict
 from scripts.metrics import mae_score, rmse_score, mape_score, r2_score
 
 
 def calculate_metrics(
     y_true: np.ndarray, y_pred: np.ndarray
-) -> dict[str, float]:
+) -> Dict[str, float]:
     """
     Calculates common evaluation metrics for a set of true and
     predicted values.
@@ -16,7 +17,7 @@ def calculate_metrics(
             The predicted target values.
 
     Returns:
-        dict[str, float]:
+        Dict[str, float]:
             A dictionary containing the calculated metric values,
             with keys for MAE, RMSE, MAPE, and R2.
     """
