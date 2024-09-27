@@ -8,10 +8,6 @@ from jinja2.exceptions import TemplateError
 
 from scripts.env import env_vars
 
-os.system(
-    f"cp {os.path.join(os.getcwd(), '1_resister_baseline.ipynb')} {os.path.join(env_vars.baseline_artifacts_dir, 'baseline.ipynb')}"
-)
-
 try:
     with open(Path(f"{env_vars.config_dir}/logger_config.yaml"), "r") as file:
         template = Template(file.read())

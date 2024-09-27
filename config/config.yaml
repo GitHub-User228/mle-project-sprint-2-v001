@@ -1,10 +1,29 @@
-experiment_name: 'flat_price_prediction'
-model_registry_name: 'flat_price_prediction_model'
+experiment_name: 'flat_price'
+model_registry_name: 'flat_price_model'
+fe_preprocessor_registry_name: 'flat_price_feat_eng_pipeline'
 raw_table_name: 'cleaned_flats'
 target_col: 'log1p_target'
 data_split_config:
   val_size: 0.1
   test_size: 0.1
   random_state: 42
+default_artifact_dir: 'artifacts'
+run_names:
+  baseline: 'baseline'
+  eda: 'eda'
+  fe:
+    preprocessor: 'fe_preprocessor'
+    model: 'fe_model'
+  fs: 'fs'
+  tuning:
+    random: 'tuning_random'
+    tpe: 'tuning_tpe'
+    final_model: 'tuning_final_model'
+optuna:
+  study_name: 'flat_price_study'
+  n_trials: 50
+  db_name:
+    random: 'optuna_random.db'
+    tpe: 'optuna_tpe.db'
   
 

@@ -59,7 +59,7 @@ def save_yaml(data: dict, path: Path) -> None:
         raise Exception(msg) from e
 
 
-def read_yaml(path: Path) -> Dict:
+def read_yaml(path: Path, verbose: bool = True) -> Dict:
     """
     Reads a yaml file, and returns a dict.
 
@@ -70,6 +70,8 @@ def read_yaml(path: Path) -> Dict:
     Returns:
         Dict:
             The yaml content as a dict.
+        verbose:
+            Whether to do any info logs
 
     Raises:
         ValueError:
@@ -86,7 +88,8 @@ def read_yaml(path: Path) -> Dict:
     try:
         with open(path, "r") as file:
             content = yaml.safe_load(file)
-        logger.info(f"YAML file {path} has been loaded")
+        if verbose: 
+            logger.info(f"YAML file {path} has been loaded")
         return content
     except FileNotFoundError as e:
         msg = f"File {path} not found"

@@ -19,3 +19,5 @@ ARTIFACTS_DIR=../artifacts
 BASELINE_ARTIFACTS_DIR=../artifacts/baseline
 EDA_ARTIFACTS_DIR=../artifacts/eda
 FE_ARTIFACTS_DIR=../artifacts/fe
+FS_ARTIFACTS_DIR=../artifacts/fs
+TUNING_ARTIFACTS_DIR=../artifacts/tuning
