@@ -25,6 +25,10 @@ In order to achieve this goal, the following steps were taken:
 - Feature Selection
 - Hyperparameter Tuning
 
+All experiments were done under the `experiment_name` = `flat_price`  
+ML models were logged under the `model_name` = `flat_price_model`  
+The transforming pipeline obtained after feature engineering was logged under the `model_name` = `flat_price_feat_eng_pipeline`  
+
 ## Project Structure
 
 **[requirements.txt](requirements.txt)**: This file contains the list of Python packages required for the project.
@@ -262,8 +266,8 @@ These techniques were applied to the model obtained as a result of feature engin
 3. Two distance-related features with the both coordinates and the building age feature are also in the top features.
 
 Since we have a list of features sorted in the importance order, we can iteravely add the most important feature and see how the model performance changes. As a result, the following number of top features was selected for each approach:
-- `internal feature importance` - 74
-- `permutation feature importance` - 56
+- `internal feature importance` - 59
+- `permutation feature importance` - 50
 
 <p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 2. Sequential Feature Selection </p>
 
@@ -274,24 +278,24 @@ The following two methods were used:
 - `Sequential Backward Selection` - starts with all features and iteratively removes the feature which decreases the performance the least
 
 As a result, the following number of top features was selected for each approach:
-- `Sequential Forward Selection` - 28
-- `Sequential Backward Selection` - 36
+- `Sequential Forward Selection` - 35
+- `Sequential Backward Selection` - 81
 
 Additionaly, an intersection and a union of the feature sets was calculated:
-- `Intersection` - 11
-- `Union` - 53
+- `Intersection` - 27
+- `Union` - 89
 
-Half of the intersection features were connected with the `total_area`, while features like `dt.dist_to_center`, building age, coordinates were also presented - most of them were found to be among the most important ones earlier.
+Half of the intersection features were connected with the area features, while features like `dt.dist_to_center`, building age, coordinates and other original features were also presented.
 
 <p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 3. Comparison </p>
 
-Features obtained via `Sequential Backward Selection` method were the best choice, although by a small margin.
+Features obtained via `Sequential Forward Selection` method were the best choice, although by a small margin.
 
 The ML model with the selected features was trained and evaluated. 
 It showed a slight improvement in the performance compared to models from previous stages:
-- `baseline`: test_r2 = 0.857386
-- `after feature engineering`: test_r2 = 0.854756
-- `after feature selection`: test_r2 = 0.859812
+- `baseline`: test_r2 = 0.842725
+- `after feature engineering`: test_r2 = 0.843985
+- `after feature selection`: test_r2 = 0.844443
 
 This means, that both feature engineering and feature selection stages were successful.
 
@@ -303,7 +307,7 @@ The corresponding run name: `fs`
 
 Optuna with Random Sampler and TPE Sampler were considered.
 Therefore, a distribution needs to be defined for each hyperparameter. Following the recommendations from the `CatBoost` documentation (`CatBoostRegressor` model was considered), the following distributions were used for tuning hyperparameters:
-- `iterations`: int from 100 to 1000
+- `iterations`: int from 100 to 500
 - `learning_rate`: float from 0.01 to 1
 - `max_depth`: int from 4 to 10
 - `l2_leaf_reg`: loguniform from 0.0001 to 1
@@ -323,19 +327,19 @@ As a result, the following interesting patterns were observed:
 - `iterations`: it was not a critical parameter, although too low values were decreasing the performance
 - `border_count`: it was not a critical parameter
 - `bagging_temperature`: it was not a critical parameter
-- `random_strength`: it was not a critical parameter, although too high values were decreasing the performance
+- `random_strength`: it was not a critical parameter
 
 Unsurprisingly, TPE Sampler provided a better hyperparameter tuning results.
 
 The ML model with the selected hyperparameters was trained and evaluated.
-- `baseline`: test_r2 = 0.857386
-- `after feature engineering`: test_r2 = 0.854756
-- `after feature selection`: test_r2 = 0.859812
-- `after hyperparameter tuning`: test_r2 = 0.870870
+- `baseline`: test_r2 = 0.842725
+- `after feature engineering`: test_r2 = 0.843985
+- `after feature selection`: test_r2 = 0.844443
+- `after hyperparameter tuning`: test_r2 = 0.850955
 
 The final model showed some improvement in the performance compared to models from previous stages, although the margin is not that great since the CatBoost model is very powerful even on the default hyperparameters.
 
-The corresponding run names: `tuning_random`, `tuning_tpe`, `tuning_model`
+The corresponding run names: `tuning_random`, `tuning_tpe`, `tuning_final_model`
 
 ---
 
