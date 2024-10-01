@@ -103,6 +103,7 @@ The following steps were taken:
 - Logging artifacts via MLflow
 
 Here are the main results of the analysis:  
+The following important notes can be made:
 1. The following features have a high correlation with the target feature:
 - total_area, ceiling_height, living_area, kitchen_area, rooms
 2. The following features have a very low correlation with the target feature:
@@ -130,11 +131,14 @@ Here are the main results of the analysis:
 - the number of rooms is larger than 4
 - the building is too old or too high
 8. There is a significant amount of flats with 0 kitchen and living areas.  
-These properties are probably used for commercial purposes.
+<font color='#d0863b'> Properties are probably used for commercial purposes with 0 value for living area.  
+The corresponding rows have been removed from the dataset. </font>
 9. It is a good idea to create the following features:
 - the distance from the center of Moscow to the flat
 - the distance from the nearest metro station to the flat
-- a feature which would indicate whether the value is 0 for both living_area and kitchen_area
+10. The following high-correlated features will be removed in the featuure engineering stage:
+- has_elevator
+- living_area
 
 ---
 
@@ -142,102 +146,97 @@ These properties are probably used for commercial purposes.
 
 <p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 1. Manual Feature Engineering</p>
 
-As a result of EDA, the following new features were considered:
+As a result of EDA, the following new features will be considered:
 - `dt.dist_to_center` = the distance from the center of Moscow to the flat
   This feature is calculated using a hand-written `DistanceTransformer`
 - `cdt.dist_to_metro` = the distance from the nearest metro station to the flat
   This feature is calculated using a hand-written `ClosestDistanceTransformer`
-- `ft.kitchen_area = 0` = a feature which would indicate whether the value is 0 for `kitchen_area`
-  This feature is calculated using a hand-written `FeatureToolsTransformer`, which is
-  based on ft.dfs method from `featuretools`
-- `ft.living_area = 0` = a feature which would indicate whether the value is 0 for `living_area` 
-  The same as above
-(in fact, it might be better to consider equality to 0 separately for both `kitchen_area` and `living_area`)
 
-Also, the following `PolynomialFeatures`, `KBinsDiscretizer` and `SplineTransformer` were applied for the most important features according to EDA:
+Also, the following `PolynomialFeatures`, `KBinsDiscretizer` and `SplineTransformer` will be applied for the most important features according to EDA + latitude:
 - `total_area`
-- `living_area`
 - `kitchen_area`
 - `ceiling_height`
 - `build_year` (only `KBinsDiscretizer`)  
 
-The resulting features have `poly.`, `kbins.` and `spline.` prefixes, respectively.
+The resulting features will have `poly.`, `kbins.` and `spline.` prefixes, respectively.
 
-The following categorical features were encoded via `CatBoostEncoder`:
+The following categorical features will be encoded via `CatBoostEncoder`:
 - `building_type_int`
 - `kbins.total_area`
-- `kbins.living_area`
 - `kbins.kitchen_area`
 - `kbins.ceiling_height`
-- `kbins.build_year`   
+- `kbins.build_year`  
 
-The resulting features have `cbe.` prefix.
+The resulting features will have `cbe.` prefix.
 
-The following binary features were encoded via `OrdinalEncoder` in order to move from boolean to numeric values:
-- `has_elevator`
+The following binary features will be encoded via `OrdinalEncoder` in order to move from boolean to numeric values:
 - `is_apartment`
 - `is_duplicated`
 
-The resulting features have `oe.` prefix.
+The resulting features will have `oe.` prefix.
 
-Apart from that, new features were introduced, which are denoted as a normalization of the `total_area` based on group-wise aggregation in the following way for each observation:
+Apart from that, let's consider new features, which are denoted as a normalization of the `total_area` based on group-wise aggregation in the following way for each observation:
 $$fnew_{i} = \frac{f_{i} - f_{g, i}}{f_{g, i}}$$
 where $i$ is the index of the observation, $f_{i}$ is the original feature, $f_{g, i}$ is the mean value of $f$ over a grouping column $g$ and $fnew_{i}$ is the new feature.
-The following features were considered as a grouping column:
+The following features will be considered as a grouping column:
 - `kbins.build_year`
 - `building_type_int`
-- `oe.has_elevator`  
 
+<p style="font-size: 10;; font-family: Verdana; font-weight: bold;">Part 2. Auto Feature Engineering</p>
 
-<p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 2. Auto Feature Engineering</p>
-
-As it was mentioned above, `featuretools` library will be utilised. Apart from mentioned new features, the `divide_numeric` and `multiply_numeric` primitives with some specific restrictions were applied for the following features:
-- `total_area`
-- `living_area`
-- `kitchen_area`
-- `ceiling_height`
-- `rooms`
-
-Additionally, building age feature was calculated using `scalar_subtract_numeric_feature` primitive for `build_year` feature.
-The resulting features have `ft.` prefix.
+`featuretools` library will be utilised. It will be used only for creating the building age feature via `scalar_subtract_numeric_feature` primitive for `build_year` feature.
+The resulting features will have `ft.` prefix.
 
 It is a good practice to generate new features using some common transformations.  
 `autofeat` package can do so automatically. Moreover, it performs feature selection  
 internally so that only the most important new features are left as a result.  
-The following transformations were considered:
+Let's consisder the following transformations:
 - '1/'
 - 'log'
 - 'cos'
 - 'sin'
+Apart from that, `autofeat` automatically generates multiplication or division for all different pairs of features.
 
-It is possible to consider a lot more transformations, but it leads to a problem with computational resources limitations. As for features, the following most important features were considered:
+
+It is possible to consider a lot more transformations, but it leads to a problem with a computational resources' limitations. <font color='#d0863b'> As for features, all numerical features will be considered except for ones that must be dropped according to correlation analysis in EDA </font>   
+- `ft.2024 - build_year` (generated by `featuretools`)
+- `flats_count`
 - `total_area`
-- `living_area`
 - `kitchen_area`
-- `ceiling_height`  
+- `ceiling_height`
+- `latitude`
+- `longitude`
+- `floors_total`
+- `rooms`
+- `floor`  
+Since there is no a prebuilt transformer for `autofeat`, a hand-written `AutoFeatTransformer` will be used.
+<font color='#d0863b'> Additionally, all highly correlated features will be dropped - this functionality is implemented in the transformer. </font> 
+The resulting features will have `aft.` prefix.
 
-Since there is no a prebuilt transformer for `autofeat`, a hand-written `AutoFeatTransformer` was used.
-The resulting features have `aft.` prefix.
 
-<p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 3. Dropping features</p>
+<p style="font-size: 10; font-family: Verdana; font-weight: bold;">Part 3. Dropping features</p>
 
-Finally, it is essential to drop unnecessary features:
+Finally, it is required to drop unnecessary features:
+- `living_area` (high correlation with `total_area`)
+- `has_elevator` (high correlation with `floors_total`)
 - `id` (it is just an identifier)
 - `building_id` (it is just an identifier)
 - `subset` (it is just an identifier)
 - `build_year` (a new building age feature is calculated using this feature)
 - `is_apartment` (it is encoded via `OrdinalEncoder`)
-- `has_elevator` (it is encoded via `OrdinalEncoder`)
 - `is_duplicated` (it is encoded via `OrdinalEncoder`)
 - `kbins.total_area` (it is encoded via `CatBoostEncoder`)
-- `kbins.living_area` (it is encoded via `CatBoostEncoder`)
 - `kbins.kitchen_area` (it is encoded via `CatBoostEncoder`)
 - `kbins.ceiling_height` (it is encoded via `CatBoostEncoder`)
 - `kbins.build_year` (it is encoded via `CatBoostEncoder`)
 - `building_type_int` (it is encoded via `CatBoostEncoder`)
 
-`flat_id` column was not dropped because at least one identifier column might be 
+<font color='#d0863b'> Additionally, as the last step, a correlation filter is applied to drop highly correlated features. It is implemented as a part of `PassthroughTransformer`. </font>
+
+`flat_id` column will not be dropped because at least one identifier column might be 
 necessary later in order to separate one observation from another.
+
+
 
 <p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 4. Results and comments </p>
 
@@ -247,8 +246,8 @@ The whole feature engineering pipeline is parametrized via the configuration fil
 As a result, the model with all features generated after feature engineering is slightly worse than a baseline model. It is highly likely that this happened because there are too many features and the model overfits on the training data - the model is not able to generalize well on a separate data. Therefore it is important to perform a feature selection.
 
 Feature Engineering run names:
-- `fe_preprocessor` - for logging the transforming pipeline
-- `fe_model` - for logging the ML model trained with all features
+- `fe_preprocessor2` - for logging the transforming pipeline
+- `fe_model2` - for logging the ML model trained with all features
 
 ---
 
@@ -260,14 +259,11 @@ It is possible to evaluate the importance of each feature and see what features 
 - `internal feature importance` - calculated for tree-based models
 - `permutation feature importance` - calculated via applying permutations to each feature and calculating the difference in the model performance
 
-These techniques were applied to the model obtained as a result of feature engineering. The following common conclusions were made:
-1. Among the top features, most of them were related to the `total_area`, which is the most important feature according to the correlation analysis.
-2. The distance to center feature is the most important by a high margin.
-3. Two distance-related features with the both coordinates and the building age feature are also in the top features.
+These techniques were applied to the model obtained as a result of feature engineering. 
 
 Since we have a list of features sorted in the importance order, we can iteravely add the most important feature and see how the model performance changes. As a result, the following number of top features was selected for each approach:
-- `internal feature importance` - 59
-- `permutation feature importance` - 50
+- `internal feature importance` - 27
+- `permutation feature importance` - 14
 
 <p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 2. Sequential Feature Selection </p>
 
@@ -278,28 +274,26 @@ The following two methods were used:
 - `Sequential Backward Selection` - starts with all features and iteratively removes the feature which decreases the performance the least
 
 As a result, the following number of top features was selected for each approach:
-- `Sequential Forward Selection` - 35
-- `Sequential Backward Selection` - 81
+- `Sequential Forward Selection` - 46
+- `Sequential Backward Selection` - 18
 
 Additionaly, an intersection and a union of the feature sets was calculated:
-- `Intersection` - 27
-- `Union` - 89
-
-Half of the intersection features were connected with the area features, while features like `dt.dist_to_center`, building age, coordinates and other original features were also presented.
+- `Intersection` - 47
+- `Union` - 17
 
 <p style="font-size: 10; color: white; font-family: Verdana; font-weight: bold;">Part 3. Comparison </p>
 
-Features obtained via `Sequential Forward Selection` method were the best choice, although by a small margin.
+Features obtained via `Permutation Importance` method were the best choice, although by a small margin.
 
 The ML model with the selected features was trained and evaluated. 
 It showed a slight improvement in the performance compared to models from previous stages:
-- `baseline`: test_r2 = 0.842725
-- `after feature engineering`: test_r2 = 0.843985
-- `after feature selection`: test_r2 = 0.844443
+- `baseline`: test_r2 = 0.822439
+- `after feature engineering`: test_r2 = 0.825053
+- `after feature selection`: test_r2 = 0.825172
 
 This means, that both feature engineering and feature selection stages were successful.
 
-The corresponding run name: `fs`
+The corresponding run name: `fs2`
 
 ---
 
@@ -311,35 +305,31 @@ Therefore, a distribution needs to be defined for each hyperparameter. Following
 - `learning_rate`: float from 0.01 to 1
 - `max_depth`: int from 4 to 10
 - `l2_leaf_reg`: loguniform from 0.0001 to 1
-- `loss_function`: `RMSE`, `MAE`
+- `loss_function`: `RMSE` (found to be generally better)
 - `random_strength`: int from 1 to 10
 - `bagging_temperature`: float from 0 to 2
 - `border_count`: int from 64 to 255
-- `grow_policy`: `SymmetricTree`, `Lossguide`, `Depthwise`
-
-In order to decrease the computational time, a train-validation approach was considered instead of cross-validation, although the second one is more preferable.
+- `grow_policy`: `Depthwise` (found to be generally better)
 
 As a result, the following interesting patterns were observed:
-- `loss_function`: `RMSE` was better - it seems that it is better to get a stronger penalty for outliers
 - `max_depth`: higher depth was better - a less biased model with high depth is crucial for the task
-- `grow_policy`: `Depthwise` was better - it is the best option for better metrics, although it comes at the cost of a more computationally expensive model
 - `learning_rate`: lower learning rate was better up to 0.1, but lower rates were decreasing the performance
 - `iterations`: it was not a critical parameter, although too low values were decreasing the performance
 - `border_count`: it was not a critical parameter
 - `bagging_temperature`: it was not a critical parameter
-- `random_strength`: it was not a critical parameter
+- `random_strength`: higher values can more likely decrease 
 
 Unsurprisingly, TPE Sampler provided a better hyperparameter tuning results.
 
 The ML model with the selected hyperparameters was trained and evaluated.
-- `baseline`: test_r2 = 0.842725
-- `after feature engineering`: test_r2 = 0.843985
-- `after feature selection`: test_r2 = 0.844443
-- `after hyperparameter tuning`: test_r2 = 0.850955
+- `baseline`: test_r2 = 0.822439
+- `after feature engineering`: test_r2 = 0.825053
+- `after feature selection`: test_r2 = 0.825172
+- `after hyperparameter tuning`: test_r2 = 0.833082
 
 The final model showed some improvement in the performance compared to models from previous stages, although the margin is not that great since the CatBoost model is very powerful even on the default hyperparameters.
 
-The corresponding run names: `tuning_random`, `tuning_tpe`, `tuning_final_model`
+The corresponding run names: `tuning_random2`, `tuning_tpe2`, `tuning_final_model2`
 
 ---
 
