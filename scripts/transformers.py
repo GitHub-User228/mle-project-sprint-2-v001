@@ -445,6 +445,8 @@ class FeatureToolsTransformer(BaseEstimator, TransformerMixin):
     Raises:
         TypeError:
             If the input arguments are not of the expected type.
+        ValueError:
+            If the input arguments are not valid.
         Exception:
              If there is an error fitting or applying the transformer.
     """
@@ -490,6 +492,8 @@ class FeatureToolsTransformer(BaseEstimator, TransformerMixin):
         Raises:
             TypeError:
                 If any of the input arguments are of the wrong type.
+            ValueError:
+                If any of the input arguments are invalid.
         """
         if not isinstance(self.trans_primitives, list):
             raise TypeError("trans_primitives must be a list")
@@ -524,6 +528,7 @@ class FeatureToolsTransformer(BaseEstimator, TransformerMixin):
                 If there is an error fitting the transformer.
         """
         try:
+            n_input_cols = X.shape[1]
             self._trans_primitives = [
                 (
                     globals()[k["name"]](**k["params"])
@@ -532,8 +537,6 @@ class FeatureToolsTransformer(BaseEstimator, TransformerMixin):
                 )
                 for k in self.trans_primitives
             ]
-
-            n_cols = X.shape[1]
             es = ft.EntitySet(id="data")
             es.add_dataframe(
                 dataframe_name="main",
@@ -541,17 +544,14 @@ class FeatureToolsTransformer(BaseEstimator, TransformerMixin):
                 index=self._index_col,
                 make_index=True,
             )
-            self._feature_names = list(
-                ft.dfs(
-                    entityset=es,
-                    target_dataframe_name="main",
-                    trans_primitives=self._trans_primitives,
-                    drop_contains=self.drop_contains,
-                    primitive_options=self.primitive_options,
-                    n_jobs=self.n_jobs,
-                )[0].columns
-            )[n_cols:]
-            del es
+            self._feature_names = ft.dfs(
+                entityset=es,
+                target_dataframe_name="main",
+                trans_primitives=self._trans_primitives,
+                drop_contains=self.drop_contains,
+                primitive_options=self.primitive_options,
+                n_jobs=self.n_jobs,
+            )[0].columns.tolist()[n_input_cols:]
             return self
         except Exception as e:
             raise Exception(f"Failed to fit {self.__class__.__name__}") from e
@@ -574,6 +574,7 @@ class FeatureToolsTransformer(BaseEstimator, TransformerMixin):
                 If there is an error applying the transformations.
         """
         try:
+            n_input_cols = X.shape[1]
             es = ft.EntitySet(id="data")
             es.add_dataframe(
                 dataframe_name="main",
@@ -589,7 +590,10 @@ class FeatureToolsTransformer(BaseEstimator, TransformerMixin):
                 primitive_options=self.primitive_options,
                 n_jobs=self.n_jobs,
             )[0][self._feature_names].values.astype(np.float32)
-            del es
+            logger.info(
+                f"[{self.__class__.__name__}] [transform] Generated "
+                f"{len(self._feature_names)} features out of {n_input_cols}."
+            )
             return X_transformed
         except Exception as e:
             raise Exception(
@@ -646,7 +650,10 @@ class AutoFeatTransformer(BaseEstimator, TransformerMixin):
         featsel_runs: int,
         max_gb: int,
         transformations: List[str],
-        n_jobs: int,
+        corr_threshold: float | None = 0.9,
+        keep_feateng_cols: bool = False,
+        pass_feateng_cols: bool = False,
+        n_jobs: int = -1,
         verbose: bool = False,
     ) -> None:
         """
@@ -672,6 +679,9 @@ class AutoFeatTransformer(BaseEstimator, TransformerMixin):
         self.featsel_runs = featsel_runs
         self.max_gb = max_gb
         self.transformations = transformations
+        self.corr_threshold = corr_threshold
+        self.keep_feateng_cols = keep_feateng_cols
+        self.pass_feateng_cols = pass_feateng_cols
         self.n_jobs = n_jobs
         self.verbose = verbose
         self._validate_input()
@@ -707,6 +717,15 @@ class AutoFeatTransformer(BaseEstimator, TransformerMixin):
             raise ValueError("max_gb must be a positive integer.")
         if isinstance(self.n_jobs, int) and self.n_jobs <= 0:
             raise ValueError("n_jobs must be a positive integer.")
+        if not isinstance(self.keep_feateng_cols, bool):
+            raise TypeError("keep_feateng_cols must be a boolean.")
+        if not isinstance(self.pass_feateng_cols, bool):
+            raise TypeError("pass_feateng_cols must be a boolean.")
+        if self.corr_threshold is not None:
+            if not isinstance(self.corr_threshold, float):
+                raise TypeError("corr_threshold must be a float.")
+            if not 0 <= self.corr_threshold <= 1:
+                raise ValueError("corr_threshold must be between 0 and 1.")
 
     def fit(self, X: pd.DataFrame, y=None) -> "AutoFeatTransformer":
         """
@@ -728,11 +747,102 @@ class AutoFeatTransformer(BaseEstimator, TransformerMixin):
                 If there is an error fitting the transformer.
         """
         try:
-            self.feateng_cols = X.columns.tolist()
+            self._feateng_cols = X.columns.tolist()
             self._afr.fit(X, y)
+            if self.corr_threshold:
+                X_transformed = pd.DataFrame(
+                    self._afr.transform(X),
+                    columns=self._feateng_cols + self._afr.new_feat_cols_,
+                )
+                self._feature_names = self.find_uncorrelated_features(
+                    data=X_transformed,
+                    target=y,
+                )
+            else:
+                self._feature_names = self._afr.new_feat_cols_
+                if self.pass_feateng_cols:
+                    self._feature_names = (
+                        self._feateng_cols + self._feature_names
+                    )
+                    logger.info(
+                        f"[{self.__class__.__name__}] [fit] Left "
+                        f"{len(self._feature_names)} features out of "
+                        f"{len(self._feature_names)}. Input columns were "
+                        f"kept. "
+                    )
+                else:
+                    logger.info(
+                        f"[{self.__class__.__name__}] [fit] Left "
+                        f"{len(self._feature_names)} features out of "
+                        f"{len(self._afr.new_feat_cols_) + len(self._feateng_cols)}. Input columns were not "
+                        f"kept. "
+                    )
             return self
         except Exception as e:
             raise Exception(f"Failed to fit {self.__class__.__name__}") from e
+
+    def find_uncorrelated_features(
+        self,
+        data: pd.DataFrame,
+        target: np.ndarray,
+    ) -> List[str]:
+
+        n_input_cols = data.shape[1]
+        data["target"] = target
+        corr_matrix = data.corr("spearman").abs()
+        # corr_matrix = data.phik_matrix()
+
+        target_corr = corr_matrix.loc[:, "target"].sort_values(ascending=False)
+        corr_matrix.drop(columns=["target"], index=["target"], inplace=True)
+        data.drop(columns=["target"], inplace=True)
+
+        np.fill_diagonal(corr_matrix.values, 0)
+
+        stacked = corr_matrix.stack().sort_values(ascending=False)
+        cols_to_drop = set()
+        for (col1, col2), corr_value in stacked.items():
+            if corr_value >= self.corr_threshold:
+                if all([col not in cols_to_drop for col in [col1, col2]]):
+                    if self.keep_feateng_cols:
+                        if all(
+                            [
+                                col not in self._feateng_cols
+                                for col in [col1, col2]
+                            ]
+                        ):
+                            cols_to_drop.add(
+                                col1
+                                if target_corr[col1] <= target_corr[col2]
+                                else col2
+                            )
+                        elif col1 not in self._feateng_cols:
+                            cols_to_drop.add(col1)
+                        elif col2 not in self._feateng_cols:
+                            cols_to_drop.add(col2)
+                    else:
+                        cols_to_drop.add(
+                            col1
+                            if target_corr[col1] <= target_corr[col2]
+                            else col2
+                        )
+            else:
+                break
+        if self.pass_feateng_cols and self.keep_feateng_cols:
+            logger.info(
+                f"[{self.__class__.__name__}] [fit] Left "
+                f"{n_input_cols - len(cols_to_drop)} features out of "
+                f"{n_input_cols} after correlation filtering. "
+                f"Input columns were kept."
+            )
+        else:
+            cols_to_drop = cols_to_drop | set(self._feateng_cols)
+            logger.info(
+                f"[{self.__class__.__name__}] [fit] Left "
+                f"{n_input_cols - len(cols_to_drop)} features out of "
+                f"{n_input_cols} after correlation filtering. Input "
+                f"columns were not kept."
+            )
+        return list(set(data.columns) - cols_to_drop)
 
     def transform(self, X: pd.DataFrame) -> np.ndarray:
         """
@@ -752,7 +862,11 @@ class AutoFeatTransformer(BaseEstimator, TransformerMixin):
                 If there is an error applying the transformer.
         """
         try:
-            return self._afr.transform(X)[self._afr.new_feat_cols_].astype(
+            logger.info(
+                f"[{self.__class__.__name__}] [transform] Generated "
+                f"{len(self._feature_names)} features out of {X.shape[1]}"
+            )
+            return self._afr.transform(X)[self._feature_names].astype(
                 np.float32
             )
         except Exception as e:
@@ -766,16 +880,10 @@ class AutoFeatTransformer(BaseEstimator, TransformerMixin):
 
         Returns:
             List[str]:
-                A list of the names of the new features generated by
-                the AutoFeatRegressor.
+                A list of the names of the new features and ones that
+                were passed through.
         """
-        transformed_X = self._afr.transform(
-            pd.DataFrame(
-                np.zeros((1, len(self.feateng_cols))),
-                columns=self.feateng_cols,
-            ),
-        )
-        return transformed_X.columns.tolist()[len(self.feateng_cols) :]
+        return self._feature_names
 
 
 class PassthroughTransformer(BaseEstimator, TransformerMixin):
@@ -804,6 +912,8 @@ class PassthroughTransformer(BaseEstimator, TransformerMixin):
         self,
         passthrough_cols: List[str | int] | None = None,
         drop_cols: List[str | int] | None = None,
+        ignore_cols: List[str | int] | None = None,
+        corr_threshold: float | None = None,
     ) -> None:
         """
         Initializes a PassthroughTransformer instance.
@@ -811,14 +921,25 @@ class PassthroughTransformer(BaseEstimator, TransformerMixin):
         Args:
             passthrough_cols (List[str | int] or None):
                 A list of column names to pass through.
-                Can't be provided together with `drop_cols`.
-                If None and `drop_cols` is None, all columns are passed through.
+                If None and `drop_cols` is None, all columns are
+                passed through. If specified with `corr_threshold`,
+                these column will be used in correlation filtering, but
+                not dropped no matter what.
             drop_cols (List[str | int] or None):
                 A list of column names to drop.
-                Can't be provided together with `passthrough_cols`.
+            ignore_cols (List[str | int] or None):
+                A list of column names to ignore when applying correlation
+                filtering. Must not overlap with `drop_cols`.
+            corr_threshold (float or None):
+                A correlation threshold for feature selection.
+                If None, no correlation-based feature selection is performed.
         """
-        self.passthrough_cols = passthrough_cols
-        self.drop_cols = drop_cols
+        self.passthrough_cols = (
+            passthrough_cols if passthrough_cols != None else []
+        )
+        self.drop_cols = drop_cols if drop_cols != None else []
+        self.ignore_cols = ignore_cols if ignore_cols != None else []
+        self.corr_threshold = corr_threshold
         self._validate_input()
 
     def _validate_input(self) -> None:
@@ -832,13 +953,10 @@ class PassthroughTransformer(BaseEstimator, TransformerMixin):
                 If any of the input arguments are invalid or
                 inconsistent.
         """
-        if self.passthrough_cols is not None and self.drop_cols is not None:
-            raise ValueError(
-                "Only one of passthrough_cols and drop_cols can be provided."
-            )
         for name, cols in {
             "passthrough_cols": self.passthrough_cols,
             "drop_cols": self.drop_cols,
+            "ignore_cols": self.ignore_cols,
         }.items():
             if cols is not None:
                 if not isinstance(cols, list):
@@ -849,6 +967,61 @@ class PassthroughTransformer(BaseEstimator, TransformerMixin):
                     raise ValueError(
                         f"{name} must be a list of unique column names."
                     )
+        if set(self.passthrough_cols) & set(self.drop_cols):
+            raise ValueError(
+                "passthrough_cols and drop_cols cannot have overlapping columns."
+            )
+        if set(self.ignore_cols) & set(self.drop_cols):
+            raise ValueError(
+                "ignore_cols and drop_cols cannot have overlapping columns."
+            )
+        if self.corr_threshold is not None:
+            if not isinstance(self.corr_threshold, float):
+                raise TypeError("corr_threshold must be a float.")
+            if not (0 <= self.corr_threshold <= 1):
+                raise ValueError(
+                    "corr_threshold must be a float between 0 and 1."
+                )
+
+    def find_uncorrelated_features(
+        self,
+        data: pd.DataFrame,
+        target: np.ndarray,
+    ) -> List[str]:
+
+        data["target"] = target
+        corr_matrix = data.corr("spearman").abs()
+        # corr_matrix = data.phik_matrix()
+
+        target_corr = corr_matrix.loc[:, "target"].sort_values(ascending=False)
+        corr_matrix.drop(columns=["target"], index=["target"], inplace=True)
+        data.drop(columns=["target"], inplace=True)
+
+        np.fill_diagonal(corr_matrix.values, 0)
+
+        stacked = corr_matrix.stack().sort_values(ascending=False)
+        cols_to_drop = set()
+        for (col1, col2), corr_value in stacked.items():
+            if corr_value >= self.corr_threshold:
+                if all([col not in cols_to_drop for col in [col1, col2]]):
+                    if all(
+                        [
+                            col not in self.passthrough_cols
+                            for col in [col1, col2]
+                        ]
+                    ):
+                        cols_to_drop.add(
+                            col1
+                            if target_corr[col1] <= target_corr[col2]
+                            else col2
+                        )
+                    elif col1 not in self.passthrough_cols:
+                        cols_to_drop.add(col1)
+                    elif col2 not in self.passthrough_cols:
+                        cols_to_drop.add(col2)
+            else:
+                break
+        return list(set(data.columns) - set(cols_to_drop))
 
     def fit(self, X: pd.DataFrame, y=None) -> "PassthroughTransformer":
         """
@@ -874,31 +1047,64 @@ class PassthroughTransformer(BaseEstimator, TransformerMixin):
                 DataFrame, or if all columns are being dropped.
         """
         fail_msg = f"Failed to fit {self.__class__.__name__}"
-        if self.drop_cols:
-            odd_columns = set(self.drop_cols) - set(X.columns.tolist())
-            if len(odd_columns) > 0:
-                raise Exception(
-                    f"{fail_msg}. Found drop_cols that are not in the "
-                    f"input columns: {odd_columns}"
-                )
-            if len(self.drop_cols) == len(X.columns.tolist()):
-                raise Exception(
-                    f"{fail_msg}. Dropping all columns is not allowed."
-                )
-            self._remaining_cols = list(
-                set(X.columns.tolist()) - set(self.drop_cols)
-            )
-        elif self.passthrough_cols:
-            odd_columns = set(self.passthrough_cols) - set(X.columns.tolist())
+        n_input_cols = len(X.columns)
+        self._remaining_cols = X.columns.tolist()
 
-            if len(odd_columns) > 0:
-                raise Exception(
-                    f"{fail_msg}. Found passthrough_cols that are not "
-                    f"in the input columns {odd_columns}"
-                )
+        # Validating
+        odd_columns = set(self.drop_cols) - set(self._remaining_cols)
+        if len(odd_columns) > 0:
+            raise Exception(
+                f"{fail_msg}. Found drop_cols that are not in the "
+                f"input columns: {odd_columns}"
+            )
+        if len(self.drop_cols) == len(self._remaining_cols):
+            raise Exception(
+                f"{fail_msg}. Dropping all columns is not allowed."
+            )
+        odd_columns = set(self.passthrough_cols) - set(self._remaining_cols)
+        if len(odd_columns) > 0:
+            raise Exception(
+                f"{fail_msg}. Found passthrough_cols that are not in the "
+                f"input columns: {odd_columns}"
+            )
+        odd_columns = set(self.ignore_cols) - set(self._remaining_cols)
+        if len(odd_columns) > 0:
+            raise Exception(
+                f"{fail_msg}. Found ignore_cols that are not in the "
+                f"input columns: {odd_columns}"
+            )
+
+        # Dropping drop_cols
+        self._remaining_cols = list(
+            set(self._remaining_cols) - set(self.drop_cols)
+        )
+        if len(self.drop_cols) > 0:
+            logger.info(
+                f"[{self.__class__.__name__}] [fit] Left "
+                f"{len(self._remaining_cols)} features out of "
+                f"{n_input_cols} after dropping specified columns."
+            )
+
+        # Correlation filtering (without ignore_cols)
+        if self.corr_threshold:
+            self._remaining_cols = self.find_uncorrelated_features(
+                X[list(set(self._remaining_cols) - set(self.ignore_cols))], y
+            )
+            self._remaining_cols = self.ignore_cols + self._remaining_cols
+            logger.info(
+                f"[{self.__class__.__name__}] [fit] Left "
+                f"{len(self._remaining_cols)} features out of "
+                f"{n_input_cols} after correlation filtering."
+            )
+        # Passing only passthrough_cols if specified without
+        # correlation filtering
+        elif len(self.passthrough_cols) > 0:
             self._remaining_cols = self.passthrough_cols.copy()
-        else:
-            self._remaining_cols = list(X.columns.tolist())
+            logger.info(
+                f"[{self.__class__.__name__}] [fit] Left "
+                f"{len(self._remaining_cols)} features out of "
+                f"{n_input_cols} after passing only specified columns."
+            )
         return self
 
     def transform(self, X: pd.DataFrame) -> np.ndarray:
@@ -920,6 +1126,10 @@ class PassthroughTransformer(BaseEstimator, TransformerMixin):
                 If there is any error during the transformation.
         """
         try:
+            logger.info(
+                f"[{self.__class__.__name__}] [transform] Passed "
+                f"{len(self._remaining_cols)} features out of {X.shape[1]}"
+            )
             return X[self._remaining_cols].values
         except Exception as e:
             raise Exception(
@@ -1042,6 +1252,11 @@ class FeatureNormaliserTransformer(TransformerMixin, BaseEstimator):
                         .agg(self.aggregation_method)
                         .to_dict()
                     )
+            logger.info(
+                f"[{self.__class__.__name__}] [fit] Calculated aggregations for "
+                f"{len(self.features_to_normalise) * len(self.grouping_features)} "
+                f"new features."
+            )
             return self
 
         except Exception as e:
@@ -1080,6 +1295,11 @@ class FeatureNormaliserTransformer(TransformerMixin, BaseEstimator):
                         )
                         .values.astype(np.float32)
                     )
+            logger.info(
+                f"[{self.__class__.__name__}] [transform] Calculated "
+                f"{len(output)} features out of "
+                f"{len(self.features_to_normalise)}."
+            )
             return np.array(output).T
         except Exception as e:
             raise Exception(
@@ -1109,6 +1329,7 @@ class DataFrameTransformer(ColumnTransformer):
     - Prefixes are always added to the names of new columns
     - Default `__` separator is removed. Therefore, it is advisable to
       add some separator directly to the prefix
+    - modifies `transform` function so that logging can be done
     """
 
     def __init__(
@@ -1121,6 +1342,16 @@ class DataFrameTransformer(ColumnTransformer):
             verbose_feature_names_out=True,
         )
         self.set_output(transform="pandas")
+
+    def transform(self, *args, **kwargs):
+
+        transformed_data = super().transform(*args, **kwargs)
+        logger.info(
+            f"[{self.__class__.__name__}] [transform] Generated "
+            f"{transformed_data.shape[1]} features out of "
+            f"{self.n_features_in_}."
+        )
+        return transformed_data
 
     def get_feature_names_out(self, input_features=None):
 

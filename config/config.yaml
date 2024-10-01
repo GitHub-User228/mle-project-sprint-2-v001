@@ -10,20 +10,20 @@ data_split_config:
 default_artifact_dir: 'artifacts'
 run_names:
   baseline: 'baseline'
-  eda: 'eda'
+  eda: 'eda2'
   fe:
-    preprocessor: 'fe_preprocessor'
-    model: 'fe_model'
-  fs: 'fs'
+    preprocessor: 'fe_preprocessor2'
+    model: 'fe_model2'
+  fs: 'fs2'
   tuning:
-    random: 'tuning_random'
-    tpe: 'tuning_tpe'
-    final_model: 'tuning_final_model'
+    random: 'tuning_random2'
+    tpe: 'tuning_tpe2'
+    final_model: 'tuning_final_model2'
 optuna:
-  study_name: 'flat_price_study'
-  n_trials: 50
+  study_name: 'flat_price_study2'
+  n_trials: 100
   db_name:
-    random: 'optuna_random.db'
-    tpe: 'optuna_tpe.db'
+    random: 'optuna_random2.db'
+    tpe: 'optuna_tpe2.db'
   
 

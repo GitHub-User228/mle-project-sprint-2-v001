@@ -1,4 +1,5 @@
 transformers:
+
     poly:
       class_name: PolynomialFeatures
       prefix: 'poly.'
@@ -7,7 +8,6 @@ transformers:
         include_bias: false
       columns:
         - 'total_area'
-        - 'living_area'
         - 'kitchen_area'
         - 'ceiling_height'
     spline:
@@ -18,7 +18,6 @@ transformers:
         degree: 3
       columns:
         - 'total_area'
-        - 'living_area'
         - 'kitchen_area'
         - 'ceiling_height' 
     kbins:
@@ -30,7 +29,6 @@ transformers:
         strategy: 'uniform'
       columns:
         - 'total_area'
-        - 'living_area'
         - 'kitchen_area'
         - 'ceiling_height'
         - 'build_year'
@@ -59,101 +57,38 @@ transformers:
       prefix: 'ft.'
       params:
         trans_primitives:
-          - 'divide_numeric'
-          - 'multiply_numeric'
           - name: ScalarSubtractNumericFeature
             params: 
               value: 2024
-          - name: EqualScalar
-            params:
-              value: 0
-        drop_contains:
-          - '/ living_area'
-          - '/ kitchen_area'
-        primitive_options:
-          divide_numeric:
-            ignore_columns:
-              main: 
-              - 'build_year'
-          multiply_numeric:
-            include_columns:
-              main:
-                - 'total_area'
-                - 'ceiling_height'
-          scalar_subtract_numeric_feature:
-            include_columns:
-              main:
-                - 'build_year'
-          equal_scalar:
-            include_columns:
-              main:
-              - 'kitchen_area'
-              - 'living_area'
         n_jobs: 1
       columns:
-        - 'total_area'
-        - 'living_area'
-        - 'kitchen_area'
-        - 'ceiling_height'
-        - 'rooms'   
         - 'build_year'
     ordinal_encoder:
       class_name: OrdinalEncoder
       prefix: 'oe.'
       params:
-      columns_selector_params:
-          dtype_include: 'bool'
       columns: 
+        - 'is_apartment'
+        - 'is_duplicated'
     passthrough1:
       class_name: 'PassthroughTransformer'
       prefix: ''
       params: 
-        passthrough_cols: 
         drop_cols: 
+          ## identifiers (not needed)
           - 'id'
           - 'building_id'
           - 'subset'
+          ## transformed to building age feature
           - 'build_year'
+          ## encoded via OrdinalEncoder
           - 'is_apartment'
-          - 'has_elevator'
           - 'is_duplicated'
+          ## dropped as a result of EDA correelation analysis
+          - 'has_elevator' # high correlation with floors_total
+          - 'living_area' # high correlation with total_area
       columns: 
 
-    normalizer:
-      class_name: FeatureNormaliserTransformer
-      prefix: 'fnt.'
-      params: 
-        features_to_normalise: 
-          - 'total_area'
-        grouping_features:
-          - 'kbins.build_year'
-          - 'building_type_int'
-          - 'oe.has_elevator'
-        aggregation_method: 'mean'
-      columns: 
-        - 'total_area'
-        - 'kbins.build_year'
-        - 'building_type_int'
-        - 'oe.has_elevator'
-    catboost_encoder:
-      class_name: CatBoostEncoder
-      prefix: 'cbe.'
-      params: 
-        return_df: False
-        cols:
-          - 'building_type_int'
-          - 'kbins.total_area'
-          - 'kbins.living_area'
-          - 'kbins.kitchen_area'
-          - 'kbins.ceiling_height'
-          - 'kbins.build_year'
-      columns: 
-        - 'building_type_int'
-        - 'kbins.total_area'
-        - 'kbins.living_area'
-        - 'kbins.kitchen_area'
-        - 'kbins.ceiling_height'
-        - 'kbins.build_year'
     autofeat:
       class_name: AutoFeatTransformer
       prefix: 'af.'
@@ -166,25 +101,74 @@ transformers:
         feateng_steps: 2
         featsel_runs: 5
         max_gb: 2
+        corr_threshold: 0.7
+        keep_feateng_cols: True
+        pass_feateng_cols: False
         n_jobs: 1
         verbose: True
       columns:
+        - 'ft.2024 - build_year'
+        - 'flats_count'
         - 'total_area'
-        - 'living_area'
         - 'kitchen_area'
         - 'ceiling_height'
+        - 'latitude'
+        - 'longitude'
+        - 'floors_total'
+        - 'rooms'
+        - 'floor'
+    normalizer:
+      class_name: FeatureNormaliserTransformer
+      prefix: 'fnt.'
+      params: 
+        features_to_normalise: 
+          - 'total_area'
+        grouping_features:
+          - 'kbins.build_year'
+          - 'building_type_int'
+        aggregation_method: 'mean'
+      columns: 
+        - 'total_area'
+        - 'kbins.build_year'
+        - 'building_type_int'
+    catboost_encoder:
+      class_name: CatBoostEncoder
+      prefix: 'cbe.'
+      params: 
+        return_df: False
+        cols:
+          - 'building_type_int'
+          - 'kbins.total_area'
+          - 'kbins.kitchen_area'
+          - 'kbins.build_year'
+      columns: 
+        - 'building_type_int'
+        - 'kbins.total_area'
+        - 'kbins.kitchen_area'
+        - 'kbins.build_year'
     passthrough2:
       class_name: 'PassthroughTransformer'
       prefix: ''
       params: 
-        passthrough_cols: 
         drop_cols: 
+        ## encoded via CatBoostEncoder
         - 'building_type_int'
         - 'kbins.total_area'
-        - 'kbins.living_area'
         - 'kbins.kitchen_area'
-        - 'kbins.ceiling_height'
         - 'kbins.build_year'
+      columns: 
+
+    passthrough3:
+      class_name: 'PassthroughTransformer'
+      prefix: ''
+      params: 
+        passthrough_cols: # These features are kept in any case
+        - 'flat_id'
+        - 'log1p_target'
+        ignore_cols: # These features are ignored when applying correlation filtering
+        - 'flat_id'
+        - 'log1p_target'
+        corr_threshold: 0.85
       columns: 
 
 pipeline:
@@ -204,6 +188,9 @@ pipeline:
         - 'normalizer'
         - 'autofeat'
         - 'passthrough2'
+    step3:
+      transformers:
+        - 'passthrough3'
 
   
 
